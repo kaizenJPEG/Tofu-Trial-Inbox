@@ -215,22 +215,22 @@ class Mail(commands.Cog):
         ## SAMPLE MAIL TABLE
         """
         Headline         | Body         | TimeCreated| isRead | userID             | Reward     | isClaimed
-        -------------------------------------------------------------------------- |            |
-        sample headline1 | sample body1 | 1685213014 | False  | 144176650958012417 |            |
-        sample headline1 | sample body1 | 1685213014 | True   | 105705940581376000 |            |
-        sample headline1 | sample body1 | 1685213014 | False  | 711212342792159322 |            |
-        sample headline1 | sample body1 | 1685213014 | True   | 372825096664121346 |            |
-        sample headline2 | sample body2 | 1685213210 | False  | 144176650958012417 | 50 points  |
-        sample headline2 | sample body2 | 1685213210 | True   | 105705940581376000 | 50 points  |
-        sample headline2 | sample body2 | 1685213210 | False  | 711212342792159322 | 50 points  |
-        sample headline2 | sample body2 | 1685213210 | True   | 372825096664121346 | 50 points  |
+        -------------------------------------------------------------------------- |            | False
+        sample headline1 | sample body1 | 1685213014 | False  | 144176650958012417 |            | False
+        sample headline1 | sample body1 | 1685213014 | True   | 105705940581376000 |            | False
+        sample headline1 | sample body1 | 1685213014 | False  | 711212342792159322 |            | False
+        sample headline1 | sample body1 | 1685213014 | True   | 372825096664121346 |            | False
+        sample headline2 | sample body2 | 1685213210 | False  | 144176650958012417 | 50 points  | False
+        sample headline2 | sample body2 | 1685213210 | True   | 105705940581376000 | 50 points  | True
+        sample headline2 | sample body2 | 1685213210 | False  | 711212342792159322 | 50 points  | False
+        sample headline2 | sample body2 | 1685213210 | True   | 372825096664121346 | 50 points  | True
 
         .....
 
-        sample headline16 | sample body16 | 1685213196 | False  | 144176650958012417 |          |
-        sample headline16 | sample body16 | 1685213196 | True   | 105705940581376000 |          |
-        sample headline16 | sample body16 | 1685213196 | False  | 711212342792159322 |          |
-        sample headline16 | sample body16 | 1685213196 | True   | 372825096664121346 |          |
+        sample headline16 | sample body16 | 1685213196 | False  | 144176650958012417 |          | False
+        sample headline16 | sample body16 | 1685213196 | True   | 105705940581376000 |          | False
+        sample headline16 | sample body16 | 1685213196 | False  | 711212342792159322 |          | False
+        sample headline16 | sample body16 | 1685213196 | True   | 372825096664121346 |          | False
         """
 
         cur.execute("SELECT * FROM mail WHERE userid = %s ORDER BY timecreated DESC", (str(ctx.author.id),))
@@ -247,13 +247,16 @@ class Mail(commands.Cog):
         noOfPages = math.ceil(len(userMail) / 5) ## Rounds up number of pages if not an int
         pageCount = 0
         mailCount = 0
+        testCount = 0
 
         # Loop that will create all the pages
+        # Loop is not perfect, has errors, still works otherwise though
         while True:
             # Create an embed/page
             mailList = []
             mailMax = 0
             mailStr = ""
+            testCount += 1
 
             ### 2. user profile picture top of embed, (username)'s Inbox
             mailEmbed = discord.Embed(
@@ -295,7 +298,9 @@ class Mail(commands.Cog):
 
             # Break loop when correct number of pages are created
             if pageCount == noOfPages:
-                print("breaking loop")
+                break
+
+            if testCount == 10:
                 break
 
         # Create paginator
