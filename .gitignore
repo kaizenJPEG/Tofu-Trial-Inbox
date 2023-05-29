@@ -1,0 +1,6 @@
+db.ini
+*.xlsx
+*.csv
+config.py
+.env
+*.sql
