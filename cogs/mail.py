@@ -73,10 +73,8 @@ async def get_inbox_params(ctx):
         mail_count += 1
         mail_max += 1
         mail_head = mail[0]
-        mail_body = mail[1]
         mail_time = int(mail[2].timestamp())
         mail_is_read = mail[3]
-        mail_userid = mail[4]
 
         # Sets the emoji to indiciate whether or not user has read this mail yet
         mail_emoji = "🌟" if not mail_is_read else ""
@@ -122,16 +120,10 @@ async def get_inbox_params(ctx):
 
     return embed_list, all_mail
     
-# Overrides Paginator Class to include Mail Dropdown
 class MyPaginator(Paginator.Simple):
     def __init__(self):
         super().__init__()
-        # Initialize "Pages" of Mail
-        self.all_mail = None
-        self.embed_list = None
-        self.dropdownMsg = None
-        self.currentDropdown = None
-        self.inbox_instance = None
+        self.current_drop_down = None
 
     async def start(self, ctx: discord.Interaction|commands.Context, pages: list[discord.Embed]):
         if isinstance(ctx, discord.Interaction):
@@ -149,38 +141,45 @@ class MyPaginator(Paginator.Simple):
                                                        TotalPages=self.total_page_count,
                                                        InitialPage=self.InitialPage)
 
-        embed_list, all_mail = await get_inbox_params(ctx)
-        self.embed_list = embed_list
+        embed_list, all_mail = await get_inbox_params(self.ctx)
+
         self.all_mail = all_mail
+        self.mail_list = all_mail[self.current_page]
 
         self.add_item(self.PreviousButton)
         self.add_item(self.page_counter)
         self.add_item(self.NextButton)
         self.message = await ctx.send(embed=self.pages[self.InitialPage], view=self)
 
-        # Add Dropdown to View
-        self.dropdownMsg = self.message
-        self.currentDropdown = Dropdown(self.all_mail[0], self.dropdownMsg, self, self.all_mail, self.embed_list, ctx=ctx)
-        self.add_item(self.currentDropdown)
+        self.current_drop_down = Dropdown(self)
+        self.add_item(self.current_drop_down)
+        
         await self.message.edit(embed=self.pages[self.current_page], view=self)
 
-    async def resume(self, message):
-        await message.edit(embed=self.inbox_instance.pages[self.inbox_instance.current_page], view=self.inbox_instance)
+    async def resume(self, previous_state):
+        self.total_page_count = len(previous_state.pages)
+        self.ctx = previous_state.ctx
+        self.current_page = previous_state.current_page
+        self.PreviousButton.callback = self.previous_button_callback
+        self.NextButton.callback = self.next_button_callback
+        self.page_counter = Paginator.SimplePaginatorPageCounter(style=previous_state.PageCounterStyle,
+                                                       TotalPages=previous_state.total_page_count,
+                                                       InitialPage=previous_state.InitialPage)
+        
+        embed_list, all_mail = await get_inbox_params(previous_state.ctx)
+        self.embed_list = embed_list
+        self.all_mail = all_mail
+        self.mail_list = all_mail[self.current_page]
+        self.message = previous_state.message
+        self.pages = embed_list
 
-    async def previous(self):
-        if self.current_page == 0:
-            self.current_page = self.total_page_count - 1
-        else:
-            self.current_page -= 1
+        self.add_item(self.PreviousButton)
+        self.add_item(self.page_counter)
+        self.add_item(self.NextButton)
 
-        self.page_counter.label = f"{self.current_page + 1}/{self.total_page_count}"
-
-        # Remove old Dropdown "page" from view, add new one
-        self.remove_item(self.currentDropdown)
-        self.currentDropdown = Dropdown(self.all_mail[self.current_page], self.dropdownMsg, self, self.all_mail, self.embed_list, ctx=self.ctx)
-        self.add_item(self.currentDropdown)
-
-        await self.message.edit(embed=self.pages[self.current_page], view=self)
+        self.current_drop_down = Dropdown(self)
+        self.add_item(self.current_drop_down)
+        await previous_state.message.edit(embed=self.pages[self.current_page], view=self)
 
     async def next(self):
         if self.current_page == self.total_page_count - 1:
@@ -191,31 +190,37 @@ class MyPaginator(Paginator.Simple):
         self.page_counter.label = f"{self.current_page + 1}/{self.total_page_count}"
 
         # Remove old Dropdown "page" from view, add new one
-        self.remove_item(self.currentDropdown)
-        self.currentDropdown = Dropdown(self.all_mail[self.current_page], self.dropdownMsg, self, self.all_mail, self.embed_list, ctx=self.ctx)
-        self.add_item(self.currentDropdown)
+        self.mail_list = self.all_mail[self.current_page]
+        self.remove_item(self.current_drop_down)
+        self.current_drop_down = Dropdown(self)
+        self.add_item(self.current_drop_down)
 
         await self.message.edit(embed=self.pages[self.current_page], view=self)
 
-    # Add timeout method - disable buttons/show message saying to re-do command
-    async def on_timeout(self):
-        ...
+    async def previous(self):
+        if self.current_page == 0:
+            self.current_page = self.total_page_count - 1
+        else:
+            self.current_page -= 1
 
-### 6. select menu at bottom for mail on the page
+        self.page_counter.label = f"{self.current_page + 1}/{self.total_page_count}"
+
+        # Remove old Dropdown "page" from view, add new one
+        self.mail_list = self.all_mail[self.current_page]
+        self.remove_item(self.current_drop_down)
+        self.current_drop_down = Dropdown(self)
+        self.add_item(self.current_drop_down)
+
+        await self.message.edit(embed=self.pages[self.current_page], view=self)
+
 class Dropdown(discord.ui.Select):
-    def __init__(self, mail_list, message, inbox_instance, all_mail = None, embed_list = None, ctx = None):
-        options = [discord.SelectOption(label=f"{mail[0]} {'🌟' if not mail[3] else ''}") for mail in mail_list]
-
+    def __init__(self, current_inbox_state):
+        options = [discord.SelectOption(label=f"{mail[0]} {'🌟' if not mail[3] else ''}") for mail in current_inbox_state.mail_list]
         super().__init__(placeholder="Select which message you'd like to read.", min_values=1, max_values=1, options=options)
-        self.mail_list = mail_list
-        self.message = message
-        self.inbox_instance = inbox_instance
-        self.all_mail = all_mail
-        self.embed_list = embed_list
-        self.ctx = ctx
+        self.current_inbox_state = current_inbox_state
 
     async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.inbox_instance.ctx.author:
+        if interaction.user != self.current_inbox_state.ctx.author:
             await interaction.response.send_message(content="That's not your inbox!", ephemeral=True)
             return
 
@@ -228,8 +233,6 @@ class Dropdown(discord.ui.Select):
         mail_head = selected_mail[0]
         mail_body = selected_mail[1]
         mail_time = int(selected_mail[2].timestamp())
-        mail_is_read = selected_mail[3]
-        mail_userid = selected_mail[4]
         mail_reward = selected_mail[5]
         mail_claimed = selected_mail[6]
 
@@ -242,11 +245,9 @@ class Dropdown(discord.ui.Select):
         mail_embed.add_field(name="Message Sent", value=f"<t:{mail_time}:R>", inline=True)
 
         if mail_reward is None:
-            reward_status = False
             reward_str = "❌ None"
         
         elif mail_reward != None:
-            reward_status = True
             if mail_claimed:
                 reward_str = f"✅ {mail_reward}"
                 mail_embed.color = discord.Color.green()
@@ -256,31 +257,23 @@ class Dropdown(discord.ui.Select):
         
         mail_embed.add_field(name="Reward", value=reward_str)
         mail_embed.set_thumbnail(url=(interaction.user.avatar.url if len(interaction.user.avatar.url) > 2 else None))
-
-        ### 8. button to return to inbox
-        view = MailButtons(self.message, self.all_mail, self.embed_list, mail_claimed, selected_mail, mail_embed, reward_status, self.inbox_instance, self.ctx)
-        
+      
         # Edit db to show that user has read message
         await db_update_user_mail_state(selected_headline, interaction.user.id)
+        view = MailButtons(self.current_inbox_state, selected_mail, mail_embed)
 
-        await self.message.edit(embed=mail_embed, view=view)
+        await self.current_inbox_state.message.edit(embed=mail_embed, view=view)
         await interaction.response.defer()
 
 class MailButtons(discord.ui.View):
-    def __init__(self, message, all_mail, embed_list, claim_status, selected_mail, mail_embed, reward_status, inbox_instance, ctx):
+    def __init__(self, prev_inbox_state, selected_mail, mail_embed):
         super().__init__()
-        self.message = message
-        self.all_mail = all_mail
-        self.embed_list = embed_list
-        self.claim_status = claim_status
+        self.prev_inbox_state = prev_inbox_state
         self.selected_mail = selected_mail
         self.mail_embed = mail_embed
-        self.reward_status = reward_status
-        self.inbox_instance = inbox_instance
-        self.ctx = ctx
 
-        if reward_status:
-            if claim_status:
+        if selected_mail[5]:
+            if selected_mail[6]:
                 self.children[-1].label = "Reward Claimed"
                 self.children[-1].emoji = "✅"
                 self.children[-1].disabled = True
@@ -289,19 +282,16 @@ class MailButtons(discord.ui.View):
 
     @discord.ui.button(label="Return to Inbox", style=discord.ButtonStyle.primary, emoji="📥")
     async def returnToInbox_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.inbox_instance.ctx.author:
+        if interaction.user != self.prev_inbox_state.ctx.author:
             await interaction.response.send_message(content="That's not your inbox!", ephemeral=True)
             return
         
-        inbox_view = MyPaginator()
-        inbox_view.inbox_instance = self.inbox_instance
-
-        await inbox_view.resume(self.inbox_instance.message)
+        await MyPaginator().resume(self.prev_inbox_state)
         await interaction.response.defer()
-
+            
     @discord.ui.button(label="Claim Reward!", style=discord.ButtonStyle.success, emoji="🎁")
     async def claim_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.inbox_instance.ctx.author:
+        if interaction.user != self.prev_inbox_state.ctx.author:
             await interaction.response.send_message(content="That's not your inbox!", ephemeral=True)
             return
 
@@ -313,7 +303,7 @@ class MailButtons(discord.ui.View):
             self.children[-1].disabled = True
             self.mail_embed.color = discord.Color.green()
 
-            await self.message.edit(embed=self.mail_embed, view=self)
+            await self.prev_inbox_state.message.edit(embed=self.mail_embed, view=self)
             await interaction.response.defer()
 
         else:
@@ -324,7 +314,7 @@ class MailButtons(discord.ui.View):
             self.children[-1].disabled = True
             self.mail_embed.color = discord.Color.green()
             
-            await self.message.edit(embed=self.mail_embed, view=self)
+            await self.prev_inbox_state.message.edit(embed=self.mail_embed, view=self)
             await interaction.response.defer()
 
 class Mail(commands.Cog):
@@ -356,8 +346,6 @@ class Mail(commands.Cog):
         """
         
         embed_list, all_mail = await get_inbox_params(ctx)
-
-        ### 5. shows pages at bottom, can go to next pages with buttons
         await MyPaginator().start(ctx, embed_list)
 
 async def setup(bot):
