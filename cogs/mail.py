@@ -13,12 +13,26 @@ async def db_connect():
 
     return conn, cur
 
-async def db_get_user_mail(user_id):
+async def db_get_user_mail(user_id, filter = "All"):
     conn, cur = await db_connect()
-    cur.execute("SELECT * FROM mail WHERE userid = %s ORDER BY isread ASC, timecreated DESC", (str(user_id),))
-    result = cur.fetchall()
-    conn.close()
 
+    if filter == "All":
+        cur.execute("SELECT * FROM mail WHERE userid = %s ORDER BY isread ASC, timecreated DESC", (str(user_id),))
+        result = cur.fetchall()
+
+    elif filter == "Read":
+        cur.execute("SELECT * FROM mail WHERE userid = %s AND isread = TRUE ORDER BY timecreated DESC", (str(user_id),))
+        result = cur.fetchall()
+    
+    elif filter == "Unread":
+        cur.execute("SELECT * FROM mail WHERE userid = %s AND isread = FALSE ORDER BY timecreated DESC", (str(user_id),))
+        result = cur.fetchall()
+    
+    elif filter == "Unclaimed":
+        cur.execute("SELECT * FROM mail WHERE userid = %s AND reward IS NOT null AND isclaimed = FALSE ORDER BY timecreated DESC", (str(user_id),))
+        result = cur.fetchall()
+
+    conn.close()
     return result
 
 async def db_get_selected_mail(headline, user_id):
@@ -49,8 +63,8 @@ async def db_update_user_claimed_state(headline, user_id):
     conn.commit()
     conn.close()
 
-async def get_inbox_params(ctx):
-    user_mail = await db_get_user_mail(ctx.author.id)
+async def get_inbox_params(ctx, filter="All"):
+    user_mail = await db_get_user_mail(ctx.author.id, filter)
 
     # Set initial variables for loop
     embed_list = []
@@ -65,58 +79,64 @@ async def get_inbox_params(ctx):
         title=f"{ctx.author.name}'s Inbox",
         color= MY_COLOR
     )
-
     mail_embed.set_thumbnail(url=(ctx.author.avatar.url if len(ctx.author.avatar.url) > 2 else None))
 
-    # Fixed loop
-    for mail in user_mail:
-        mail_count += 1
-        mail_max += 1
-        mail_head = mail[0]
-        mail_time = int(mail[2].timestamp())
-        mail_is_read = mail[3]
+    if len(user_mail) == 0:
+        mail_embed.description = "There are no messages to display! Choose a different filter."
+        mail_embed.set_footer(text=f"Showing mail 0-0 of 0")
+        embed_list.append(mail_embed)
+        all_mail.append([None])
 
-        # Sets the emoji to indiciate whether or not user has read this mail yet
-        mail_emoji = "🌟" if not mail_is_read else ""
+    else:
+        # Fixed loop
+        for mail in user_mail:
+            mail_count += 1
+            mail_max += 1
+            mail_head = mail[0]
+            mail_time = int(mail[2].timestamp())
+            mail_is_read = mail[3]
 
-        ### 4. each mail has dynamic timestamp, a headline, and an emoji to indicate if new if has been read then emoji removed
-        mail_str += f"{mail_count}. {mail_head} | <t:{mail_time}:R> | {mail_emoji}\n"
-        
-        mail_list.append(mail)
+            # Sets the emoji to indiciate whether or not user has read this mail yet
+            mail_emoji = "🌟" if not mail_is_read else ""
 
-        if mail_max == 5:
-            mail_embed.add_field(name="Select a message", value=f"{mail_str}")
-            mail_embed.set_footer(text=f"Showing mail {footer_low}-{mail_count} of {len(user_mail)}")
-            embed_list.append(mail_embed)
-            mail_str = ""
-            mail_max = 0
-            footer_low = mail_count + 1
+            ### 4. each mail has dynamic timestamp, a headline, and an emoji to indicate if new if has been read then emoji removed
+            mail_str += f"{mail_count}. {mail_head} | <t:{mail_time}:R> | {mail_emoji}\n"
+            
+            mail_list.append(mail)
 
-            all_mail.append(mail_list)
-            mail_list = []
+            if mail_max == 5:
+                mail_embed.add_field(name="Select a message", value=f"{mail_str}")
+                mail_embed.set_footer(text=f"Showing mail {footer_low}-{mail_count} of {len(user_mail)}")
+                embed_list.append(mail_embed)
+                mail_str = ""
+                mail_max = 0
+                footer_low = mail_count + 1
 
-            mail_embed = discord.Embed(
-                title=f"{ctx.author.name}'s Inbox",
-                color= MY_COLOR
-            )
+                all_mail.append(mail_list)
+                mail_list = []
 
-            mail_embed.set_thumbnail(url=(ctx.author.avatar.url if len(ctx.author.avatar.url) > 2 else None))
+                mail_embed = discord.Embed(
+                    title=f"{ctx.author.name}'s Inbox",
+                    color= MY_COLOR
+                )
 
-        elif mail_count == len(user_mail):
-            mail_embed.add_field(name="Select a message", value=f"{mail_str}")
-            mail_embed.set_footer(text=f"Showing mail {footer_low}-{mail_count} of {len(user_mail)}")
-            embed_list.append(mail_embed)
-            mail_str = ""
+                mail_embed.set_thumbnail(url=(ctx.author.avatar.url if len(ctx.author.avatar.url) > 2 else None))
 
-            all_mail.append(mail_list)
-            mail_list = []
+            elif mail_count == len(user_mail):
+                mail_embed.add_field(name="Select a message", value=f"{mail_str}")
+                mail_embed.set_footer(text=f"Showing mail {footer_low}-{mail_count} of {len(user_mail)}")
+                embed_list.append(mail_embed)
+                mail_str = ""
 
-            mail_embed = discord.Embed(
-                title=f"{ctx.author.name}'s Inbox",
-                color= MY_COLOR
-            )
+                all_mail.append(mail_list)
+                mail_list = []
 
-            mail_embed.set_thumbnail(url=(ctx.author.avatar.url if len(ctx.author.avatar.url) > 2 else None))
+                mail_embed = discord.Embed(
+                    title=f"{ctx.author.name}'s Inbox",
+                    color= MY_COLOR
+                )
+
+                mail_embed.set_thumbnail(url=(ctx.author.avatar.url if len(ctx.author.avatar.url) > 2 else None))
 
     return embed_list, all_mail
     
@@ -124,6 +144,9 @@ class MyPaginator(Paginator.Simple):
     def __init__(self):
         super().__init__()
         self.current_drop_down = None
+
+        self.top_of_inbox_button = discord.ui.Button(emoji="⏮️")
+        self.bottom_of_inbox_button = discord.ui.Button(emoji="⏭️")
 
     async def start(self, ctx: discord.Interaction|commands.Context, pages: list[discord.Embed]):
         if isinstance(ctx, discord.Interaction):
@@ -146,14 +169,17 @@ class MyPaginator(Paginator.Simple):
         self.all_mail = all_mail
         self.mail_list = all_mail[self.current_page]
 
+        self.add_item(self.top_of_inbox_button)
         self.add_item(self.PreviousButton)
         self.add_item(self.page_counter)
         self.add_item(self.NextButton)
+        self.add_item(self.bottom_of_inbox_button)
         self.message = await ctx.send(embed=self.pages[self.InitialPage], view=self)
 
-        self.current_drop_down = Dropdown(self)
-        self.add_item(self.current_drop_down)
-        
+        if self.mail_list[0] != None:
+            self.current_drop_down = Dropdown(self)
+            self.add_item(self.current_drop_down)
+        self.add_item(MailFilterDropdown(self))
         await self.message.edit(embed=self.pages[self.current_page], view=self)
 
     async def resume(self, previous_state):
@@ -173,13 +199,49 @@ class MyPaginator(Paginator.Simple):
         self.message = previous_state.message
         self.pages = embed_list
 
+        self.add_item(self.top_of_inbox_button)
         self.add_item(self.PreviousButton)
         self.add_item(self.page_counter)
         self.add_item(self.NextButton)
+        self.add_item(self.bottom_of_inbox_button)
 
-        self.current_drop_down = Dropdown(self)
-        self.add_item(self.current_drop_down)
+        if self.mail_list[0] != None:
+            self.current_drop_down = Dropdown(self)
+            self.add_item(self.current_drop_down)
+
+        self.add_item(MailFilterDropdown(self))
         await previous_state.message.edit(embed=self.pages[self.current_page], view=self)
+
+    async def filter(self, previous_state, selected_filter):
+        embed_list, all_mail = await get_inbox_params(previous_state.ctx, selected_filter)
+        self.total_page_count = len(embed_list)
+        self.ctx = previous_state.ctx
+        self.current_page = previous_state.current_page
+        self.PreviousButton.callback = self.previous_button_callback
+        self.NextButton.callback = self.next_button_callback
+        self.page_counter = Paginator.SimplePaginatorPageCounter(style=previous_state.PageCounterStyle,
+                                                       TotalPages=self.total_page_count,
+                                                       InitialPage=previous_state.InitialPage)
+        
+        self.embed_list = embed_list
+        self.all_mail = all_mail
+        self.mail_list = all_mail[0]
+        self.message = previous_state.message
+        self.pages = embed_list
+
+        self.add_item(self.top_of_inbox_button)
+        self.add_item(self.PreviousButton)
+        self.add_item(self.page_counter)
+        self.add_item(self.NextButton)
+        self.add_item(self.bottom_of_inbox_button)
+
+        if self.mail_list[0] != None:
+            self.current_drop_down = Dropdown(self)
+            self.add_item(self.current_drop_down)
+
+        self.add_item(MailFilterDropdown(self))
+
+        await previous_state.message.edit(embed=self.pages[0], view=self)
 
     async def next(self):
         if self.current_page == self.total_page_count - 1:
@@ -316,6 +378,27 @@ class MailButtons(discord.ui.View):
             
             await self.prev_inbox_state.message.edit(embed=self.mail_embed, view=self)
             await interaction.response.defer()
+
+class MailFilterDropdown(discord.ui.Select):
+    def __init__(self, current_inbox_state):
+        options = [
+            discord.SelectOption(label="All (default)", description="Show all messages in your inbox", emoji="📥", value="All"),
+            discord.SelectOption(label="Read", description="Show all read messages", emoji="📖"),
+            discord.SelectOption(label="Unread", description="Show all unread messages", emoji="🌟"),
+            discord.SelectOption(label="Unclaimed", description="Show all unclaimed messages", emoji="🎁")
+        ]
+
+        super().__init__(placeholder="Filter your inbox by:", min_values=1, max_values=1, options=options)
+        self.current_inbox_state = current_inbox_state
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.current_inbox_state.ctx.author:
+            await interaction.response.send_message(content="That's not your inbox!", ephemeral=True)
+            return
+        
+        selected_filter = self.values[0]
+        await MyPaginator().filter(self.current_inbox_state, selected_filter)
+        await interaction.response.defer()
 
 class Mail(commands.Cog):
     def __init__(self, bot):
