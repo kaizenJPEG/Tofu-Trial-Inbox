@@ -142,8 +142,9 @@ async def get_inbox_params(ctx, filter="All"):
     
 class MyPaginator(Paginator.Simple):
     def __init__(self):
-        super().__init__()
+        super().__init__(timeout=None)
         self.current_drop_down = None
+        self.current_filter = "All"
 
         self.top_of_inbox_button = discord.ui.Button(emoji="⏮️")
         self.bottom_of_inbox_button = discord.ui.Button(emoji="⏭️")
@@ -164,8 +165,7 @@ class MyPaginator(Paginator.Simple):
                                                        TotalPages=self.total_page_count,
                                                        InitialPage=self.InitialPage)
 
-        embed_list, all_mail = await get_inbox_params(self.ctx)
-
+        embed_list, all_mail = await get_inbox_params(self.ctx, self.current_filter)
         self.all_mail = all_mail
         self.mail_list = all_mail[self.current_page]
 
@@ -183,22 +183,21 @@ class MyPaginator(Paginator.Simple):
         await self.message.edit(embed=self.pages[self.current_page], view=self)
 
     async def resume(self, previous_state):
-        self.total_page_count = len(previous_state.pages)
-        self.ctx = previous_state.ctx
+        self.current_filter = previous_state.current_filter
+        embed_list, all_mail = await get_inbox_params(previous_state.ctx, previous_state.current_filter)
         self.current_page = previous_state.current_page
-        self.PreviousButton.callback = self.previous_button_callback
-        self.NextButton.callback = self.next_button_callback
-        self.page_counter = Paginator.SimplePaginatorPageCounter(style=previous_state.PageCounterStyle,
-                                                       TotalPages=previous_state.total_page_count,
-                                                       InitialPage=previous_state.InitialPage)
-        
-        embed_list, all_mail = await get_inbox_params(previous_state.ctx)
         self.embed_list = embed_list
         self.all_mail = all_mail
         self.mail_list = all_mail[self.current_page]
         self.message = previous_state.message
         self.pages = embed_list
-
+        self.total_page_count = len(self.pages)
+        self.ctx = previous_state.ctx
+        self.PreviousButton.callback = self.previous_button_callback
+        self.NextButton.callback = self.next_button_callback
+        self.page_counter = Paginator.SimplePaginatorPageCounter(style=previous_state.PageCounterStyle,
+                                                       TotalPages=previous_state.total_page_count,
+                                                       InitialPage=previous_state.current_page)
         self.add_item(self.top_of_inbox_button)
         self.add_item(self.PreviousButton)
         self.add_item(self.page_counter)
@@ -213,16 +212,16 @@ class MyPaginator(Paginator.Simple):
         await previous_state.message.edit(embed=self.pages[self.current_page], view=self)
 
     async def filter(self, previous_state, selected_filter):
+        self.current_filter = selected_filter
         embed_list, all_mail = await get_inbox_params(previous_state.ctx, selected_filter)
         self.total_page_count = len(embed_list)
         self.ctx = previous_state.ctx
-        self.current_page = previous_state.current_page
+        self.current_page = 0
         self.PreviousButton.callback = self.previous_button_callback
         self.NextButton.callback = self.next_button_callback
         self.page_counter = Paginator.SimplePaginatorPageCounter(style=previous_state.PageCounterStyle,
                                                        TotalPages=self.total_page_count,
-                                                       InitialPage=previous_state.InitialPage)
-        
+                                                       InitialPage=0)
         self.embed_list = embed_list
         self.all_mail = all_mail
         self.mail_list = all_mail[0]
